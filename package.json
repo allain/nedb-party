@@ -1,0 +1,30 @@
+{
+  "name": "nedb-party",
+  "version": "0.0.0",
+  "description": "A library for making nedb usage multi-process capable.",
+  "main": "index.js",
+  "scripts": {
+    "test": "tape test/*",
+    "format": "standard-format --write"
+  },
+  "keywords": [
+    "nedb"
+  ],
+  "author": "Allain Lalonde <allain.lalonde@gmail.com>",
+  "license": "ISC",
+  "dependencies": {
+    "debug": "^2.2.0",
+    "detect-port": "^0.1.4",
+    "get-parameter-names": "^0.2.0",
+    "minimum-rpc": "0.0.7",
+    "nedb": "^1.8.0",
+    "reuser": "^1.2.1",
+    "socket.io": "^1.4.5",
+    "socket.io-client": "^1.4.5"
+  },
+  "devDependencies": {
+    "blue-tape": "^0.2.0",
+    "standard-format": "^2.1.0",
+    "tap": "^5.6.0"
+  }
+}
