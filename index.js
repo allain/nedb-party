@@ -10,12 +10,8 @@ var stores = {}
 var listening = false
 
 var server = http.createServer(function handleRequest (request, response) {
-  var data = []
-  request.on('data', function (chunk) {
-    data.push(chunk)
-  })
-  request.on('end', function () {
-    var payload = JSON.parse(data.join(''))
+  readAll(request, function(err, data) {
+    var payload = JSON.parse(data)
 
     var options = payload.storeOptions
     var methodName = payload.methodName
@@ -117,14 +113,9 @@ Object.keys(Datastore.prototype).forEach(function (methodName) {
 
       request.on('response', function (response) {
         response.setEncoding('utf8')
-        var data = []
-        response.on('data', function (chunk) {
-          data.push(chunk)
-        })
-        response.on('end', function () {
-          console.log(data.join(''))
-          var payload = JSON.parse(data.join(''))
 
+        readAll(response, function(err, data) {
+          var payload = JSON.parse(data)
           if (response.statusCode === 200) {
             return cb(null, payload)
           } else {
@@ -137,5 +128,21 @@ Object.keys(Datastore.prototype).forEach(function (methodName) {
     })
   }
 })
+
+
+function readAll(stream, cb) {
+  var data = []
+  stream.on('data', function (chunk) {
+    data.push(chunk)
+  })
+  stream.once('end', function () {
+    cb(null, data.join(''));
+    cb = function() {}
+  })
+  stream.once('error', function(err) {
+    cb(err);
+    cb = function() {}
+  })
+}
 
 module.exports = DatastoreProxy

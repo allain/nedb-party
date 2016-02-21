@@ -26,7 +26,7 @@ test('DatastoreProxy behaves like Datastore', function (t) {
   })
 })
 
-test('Can. safely have two DatastoreProxies defined in the same Process', function (t) {
+test('can safely have two DatastoreProxies defined in the same Process', function (t) {
   var dbPath = '/tmp/nedb-party-' + Date.now()
 
   var db1 = new DatastoreProxy({ filename: dbPath, autoload: true })
