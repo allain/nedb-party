@@ -1,89 +1,73 @@
 var path = require('path')
+var http = require('http')
 
 var debug = require('debug')('nedb-party')
 
-var reuser = require('reuser')
-
 var Datastore = require('nedb')
 
-var MinimumRpc = require('minimum-rpc')
-
-var promisify = require('any-promisify')
-
 var stores = {}
+
+var listening = false
+
+var server = http.createServer(function handleRequest (request, response) {
+  var data = []
+  request.on('data', function (chunk) {
+    data.push(chunk)
+  })
+  request.on('end', function () {
+    var payload = JSON.parse(data.join(''))
+
+    var options = payload.storeOptions
+    var methodName = payload.methodName
+    var args = payload.args
+
+    debug('received call for %s with arguments %j on db %j', methodName, args, options)
+
+    var storeKey = JSON.stringify(options)
+    var store = stores[storeKey] = stores[storeKey] || new Datastore(options)
+
+    args.push(function (err, result) {
+      if (err) {
+        response.writeHead(500, { 'Content-Type': 'application/json' })
+        response.end({error: err.message})
+      } else {
+        response.writeHead(200, { 'Content-Type': 'application/json' })
+        response.end(JSON.stringify(result))
+      }
+    })
+
+    store[methodName].apply(store, args)
+  })
+})
+
+function startServer (cb) {
+  if (listening)
+    return cb(null, server)
+
+  server.listen(40404, function (err) {
+    listening = !err
+
+    return cb(err, listening ? server : null)
+  })
+}
 
 function DatastoreProxy (options) {
   options = options || {}
 
-  options.port = options.port || 40404
-
   if (options.autoload !== true) {
+    // TODO: decide if this is true, or just preferable
     debug('nedb-party requires autoload, so setting it to true')
     options.autoload = true
   }
 
-  if (typeof options.filename !== 'string' || options.filename[0] !== '/')
-    throw new Error('nedb-party requires filename to be an absolute filepath')
+  if (!options.filename)
+    throw new Error('nedb-party needs filename to work')
 
-  var originalFilename = options.filename
-  options.filename = path.normalize(options.filename)
-  if (originalFilename !== options.filename) {
-    debug('normalized filepath to %s', options.filename)
-  }
+  options.filename = path.resolve(path.normalize(options.filename))
+
+  debug('using db file %s', options.filename)
 
   this._options = options
-
-  this._useServer = reuser(startServer, stopServer, { teardownDelay: 1000 });
-
-  function startServer(cb) {
-    debug('setting up server');
-
-    var app = require('http').createServer()
-    var sio = require('socket.io')(app)
-
-    app.listen(options.port, function (err) {
-      if (err) return cb(err)
-
-      var server = new MinimumRpc.Server(sio)
-
-      Object.keys(Datastore.prototype).forEach(function (methodName) {
-        debug('registring method %s as rpc target', methodName)
-
-        server.set(methodName, function (options, args, cb) {
-          debug('received call for %s with arguments %j on db %j', methodName, args, options)
-          var store = loadStore(options)
-          args.push(cb)
-          store[methodName].apply(store, args)
-        })
-      })
-
-      var cio = require('socket.io-client')
-      var client = new MinimumRpc.Client(cio, {url: 'http://127.0.0.1:' + options.port})
-
-      cb(null, {
-        app: app,
-        sio: sio,
-        cio: cio,
-        server: server,
-        client: client
-      })
-    })
-  }
-
-  function stopServer(state, cb) {
-    debug('tearing down server');
-
-    try {
-      state.client._socket.disconnect()
-      state.sio.close()
-      state.app.close()
-      cb()
-    } catch (e) {
-      console.log('ERROR', e)
-      cb(e)
-    }
-  }
-
 }
 
 Object.keys(Datastore.prototype).forEach(function (methodName) {
@@ -94,31 +78,64 @@ Object.keys(Datastore.prototype).forEach(function (methodName) {
     var useServer = this._useServer
 
     var args = Array.prototype.slice.call(arguments, 0)
-
     var cb = args.pop()
 
-    debug('sending rpc call to %s with args %j', methodName, args)
+    startServer(function (err, server) {
+      if (server) {
+        debug('performing nedb operation directly on database')
 
-    useServer(function(state, cb) {
-      state.client.send(methodName, options, args, cb)
-    }).then(function(result) {
-      cb(null, result)
-      return result
-    }).catch(cb)
+        // This is the master, so just do it directly
+        var storeKey = JSON.stringify(options)
+        var store = stores[storeKey] = stores[storeKey] || new Datastore(options)
+        args.push(function (err, result) {
+          // server.close(function(err2) {
+          cb(err, result)
+        // })
+        })
+        store[methodName ].apply(store, args)
+        return
+      }
+
+      debug('sending rpc call to %s with args %j', methodName, args)
+
+      var body = JSON.stringify({
+        methodName: methodName,
+        storeOptions: options,
+        args: args
+      })
+
+      var request = new http.ClientRequest({
+        hostname: '127.0.0.1',
+        port: 40404,
+        path: '/',
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Content-Length': Buffer.byteLength(body)
+        }
+      })
+
+      request.on('response', function (response) {
+        response.setEncoding('utf8')
+        var data = []
+        response.on('data', function (chunk) {
+          data.push(chunk)
+        })
+        response.on('end', function () {
+          console.log(data.join(''))
+          var payload = JSON.parse(data.join(''))
+
+          if (response.statusCode === 200) {
+            return cb(null, payload)
+          } else {
+            return cb(new Error(payload.error))
+          }
+        })
+      })
+
+      request.end(body)
+    })
   }
 })
-
-function loadStore (options) {
-  var storeKey = JSON.stringify(options)
-  var store = stores[storeKey]
-
-  if (store) return store
-
-  store = new Datastore(options)
-
-  stores[storeKey] = store
-
-  return store
-}
 
 module.exports = DatastoreProxy

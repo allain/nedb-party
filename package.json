@@ -14,17 +14,9 @@
   "license": "ISC",
   "dependencies": {
     "debug": "^2.2.0",
-    "detect-port": "^0.1.4",
-    "get-parameter-names": "^0.2.0",
-    "minimum-rpc": "0.0.7",
-    "nedb": "^1.8.0",
-    "reuser": "^1.2.1",
-    "socket.io": "^1.4.5",
-    "socket.io-client": "^1.4.5"
+    "nedb": "^1.8.0"
   },
   "devDependencies": {
-    "blue-tape": "^0.2.0",
-    "standard-format": "^2.1.0",
-    "tap": "^5.6.0"
+    "tape": "^4.4.0"
   }
 }
