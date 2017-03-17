@@ -126,8 +126,12 @@ Object.keys(Datastore.prototype).forEach(function (methodName) {
           data.push(chunk)
         })
         response.on('end', function () {
-          var payload = JSON.parse(data.join(''))
-          
+          var payload = undefined;
+
+          if (data.length > 0)  {
+            payload = JSON.parse(data.join(''))
+          }
+
           if (response.statusCode === 200) {
             return cb(null, payload)
           } else {
