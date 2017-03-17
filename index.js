@@ -1,17 +1,20 @@
 var path = require('path')
 var http = require('http')
-
 var debug = require('debug')('nedb-party')
-
 var Datastore = require('nedb')
 
-var stores = {}
+var lock = require('./lock')
 
+var stores = {}
 var listening = false
 
 var server = http.createServer(function handleRequest (request, response) {
-  readAll(request, function(err, data) {
-    var payload = JSON.parse(data)
+  var data = []
+  request.on('data', function (chunk) {
+    data.push(chunk)
+  })
+  request.on('end', function () {
+    var payload = JSON.parse(data.join(''))
 
     var options = payload.storeOptions
     var methodName = payload.methodName
@@ -40,11 +43,16 @@ function startServer (cb) {
   if (listening)
     return cb(null, server)
 
-  server.listen(40404, function (err) {
-    listening = !err
-
-    return cb(err, listening ? server : null)
-  })
+  lock.lock(function(err) {
+    if (!err) {
+      server.listen(40404, function (err) {
+        listening = !err
+        return cb(err, listening ? server : null)
+      })
+    } else {
+      return cb(err, null)
+    }
+  });
 }
 
 function DatastoreProxy (options) {
@@ -113,9 +121,17 @@ Object.keys(Datastore.prototype).forEach(function (methodName) {
 
       request.on('response', function (response) {
         response.setEncoding('utf8')
+        var data = []
+        response.on('data', function (chunk) {
+          data.push(chunk)
+        })
+        response.on('end', function () {
+          var payload = undefined;
 
-        readAll(response, function(err, data) {
-          var payload = JSON.parse(data)
+          if (data.length > 0)  {
+            payload = JSON.parse(data.join(''))
+          }
+
           if (response.statusCode === 200) {
             return cb(null, payload)
           } else {
@@ -128,21 +144,5 @@ Object.keys(Datastore.prototype).forEach(function (methodName) {
     })
   }
 })
-
-
-function readAll(stream, cb) {
-  var data = []
-  stream.on('data', function (chunk) {
-    data.push(chunk)
-  })
-  stream.once('end', function () {
-    cb(null, data.join(''));
-    cb = function() {}
-  })
-  stream.once('error', function(err) {
-    cb(err);
-    cb = function() {}
-  })
-}
 
 module.exports = DatastoreProxy
